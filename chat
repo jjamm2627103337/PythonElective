@@ -1,0 +1,92 @@
+#include<stdio.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<string.h>
+#include<arpa/inet.h>
+#include<unistd.h>
+
+#define PORT 6265
+#define BUFFER_SIZE 1024
+
+void main() {
+    int client;
+    char buffer[BUFFER_SIZE];
+    struct sockaddr_in servAddr;
+
+    client = socket(AF_INET, SOCK_STREAM, 0);
+    servAddr.sin_family = AF_INET;
+    servAddr.sin_port = htons(PORT);
+    servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    connect(client, (struct sockaddr *)&servAddr, sizeof(servAddr));
+    printf("Connected to server!\n");
+
+    while (1) {
+        printf("Client: ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+        send(client, buffer, strlen(buffer), 0);
+
+        if (strncmp(buffer, "exit", 4) == 0) {
+            printf("Connection closed.\n");
+            break;
+        }
+
+        memset(buffer, 0, BUFFER_SIZE);
+        recv(client, buffer, BUFFER_SIZE, 0);
+        printf("Server: %s", buffer);
+    }
+
+    close(client);
+}
+
+#include<stdio.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<string.h>
+#include<arpa/inet.h>
+#include<unistd.h>
+
+#define PORT 6265
+#define BUFFER_SIZE 1024
+
+void main() {
+    int server, newSock;
+    char buffer[BUFFER_SIZE];
+    struct sockaddr_in servAddr;
+    struct sockaddr_storage store;
+    socklen_t addrSize;
+
+    server = socket(AF_INET, SOCK_STREAM, 0);
+    servAddr.sin_family = AF_INET;
+    servAddr.sin_port = htons(PORT);
+    servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    bind(server, (struct sockaddr *)&servAddr, sizeof(servAddr));
+    if (listen(server, 5) == 0)
+        printf("Listening on port %d\n", PORT);
+    else {
+        printf("Error\n");
+        return;
+    }
+
+    newSock = accept(server, (struct sockaddr *)&store, &addrSize);
+    printf("Client connected!\n");
+    
+    while (1) {
+        memset(buffer, 0, BUFFER_SIZE);
+        recv(newSock, buffer, BUFFER_SIZE, 0);
+        printf("Client: %s", buffer);
+
+        if (strncmp(buffer, "exit", 4) == 0) {
+            printf("Client disconnected.\n");
+            break;
+        }
+
+        printf("Server: ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+        send(newSock, buffer, strlen(buffer), 0);
+    }
+    
+    close(newSock);
+    close(server);
+}
