@@ -90,3 +90,121 @@ void main() {
     close(newSock);
     close(server);
 }
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <netinet/in.h>
+
+#define TOTAL_FRAMES 9
+#define WINDOW_SIZE 3
+
+int main() {
+    int s_sock, c_sock;
+    struct sockaddr_in server, client;
+    socklen_t cli_len = sizeof(client);
+    char buffer[100];
+
+    s_sock = socket(AF_INET, SOCK_STREAM, 0);
+    server.sin_family = AF_INET;
+    server.sin_port = htons(8080);
+    server.sin_addr.s_addr = INADDR_ANY;
+
+    bind(s_sock, (struct sockaddr*)&server, sizeof(server));
+    listen(s_sock, 1);
+    printf("Server waiting for client...\n");
+
+    c_sock = accept(s_sock, (struct sockaddr*)&client, &cli_len);
+    printf("Client connected!\n\n");
+
+    int frame = 0;
+    int ack_status[TOTAL_FRAMES] = {0}; // 0 = not acked
+
+    while (frame < TOTAL_FRAMES) {
+        // Send 3 frames (window)
+        for (int i = frame; i < frame + WINDOW_SIZE && i < TOTAL_FRAMES; i++) {
+            if (ack_status[i] == 0) {
+                sprintf(buffer, "Frame %d", i);
+                write(c_sock, buffer, sizeof(buffer));
+                printf("Sent: %s\n", buffer);
+            }
+        }
+
+        // Receive ACK/NACK for 3 frames
+        for (int i = frame; i < frame + WINDOW_SIZE && i < TOTAL_FRAMES; i++) {
+            if (ack_status[i] == 1) continue; // Already acknowledged
+
+            bzero(buffer, sizeof(buffer));
+            read(c_sock, buffer, sizeof(buffer));
+            printf("Received from client: %s\n", buffer);
+
+            if (strstr(buffer, "ACK")) {
+                ack_status[i] = 1;
+            }
+        }
+
+        // Move window forward only for ACKed frames
+        while (ack_status[frame] == 1 && frame < TOTAL_FRAMES) {
+            frame++;
+        }
+
+        printf("----\n");
+    }
+
+    close(c_sock);
+    close(s_sock);
+    return 0;
+}
+
+client
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <time.h>
+
+int main() {
+    int c_sock;
+    struct sockaddr_in server;
+    char buffer[100];
+
+    c_sock = socket(AF_INET, SOCK_STREAM, 0);
+    server.sin_family = AF_INET;
+    server.sin_port = htons(8080);
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    connect(c_sock, (struct sockaddr*)&server, sizeof(server));
+    printf("Connected to server!\n\n");
+
+    srand(time(0));
+    int received = 0;
+
+    while (received < 9) {
+        bzero(buffer, sizeof(buffer));
+        read(c_sock, buffer, sizeof(buffer));
+
+        if (strlen(buffer) == 0) continue;
+
+        printf("Received: %s\n", buffer);
+
+        int corrupt = rand() % 4 == 0; // 25% chance of NACK
+        char response[100];
+        if (corrupt) {
+            sprintf(response, "NACK %d", received);
+            printf("Sending NACK for frame %d\n", received);
+        } else {
+            sprintf(response, "ACK %d", received);
+            printf("Sending ACK for frame %d\n", received);
+            received++;
+        }
+
+        write(c_sock, response, sizeof(response));
+    }
+
+    close(c_sock);
+    return 0;
+}
